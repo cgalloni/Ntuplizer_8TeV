@@ -1,0 +1,244 @@
+#include "FWCore/Framework/interface/Frameworkfwd.h"
+#include "FWCore/Framework/interface/EDAnalyzer.h"
+
+#include "FWCore/Framework/interface/Event.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
+
+#include "FWCore/ParameterSet/interface/ParameterSet.h"
+
+#include "DataFormats/TrackReco/interface/Track.h"
+#include "DataFormats/TrackReco/interface/TrackFwd.h"
+#include "FWCore/MessageLogger/interface/MessageLogger.h"
+
+#include "FWCore/ServiceRegistry/interface/Service.h"
+#include "CommonTools/UtilAlgos/interface/TFileService.h"
+#include "TH1.h"
+
+#include "DataFormats/MuonReco/interface/MuonFwd.h"
+#include "DataFormats/MuonReco/interface/MuonCocktails.h"
+
+#include <memory>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <fstream>
+#include <iostream>
+
+#include <TFile.h>
+#include <TH1F.h>
+#include <TH2F.h>
+#include <TLorentzVector.h>
+#include <TROOT.h>
+#include <TSystem.h>
+#include <TTree.h>
+#include <TInterpreter.h>
+
+#include "DataFormats/FWLite/interface/Event.h"
+#include "DataFormats/Common/interface/Handle.h"
+#include "FWCore/FWLite/interface/AutoLibraryLoader.h"
+#include "FWCore/PythonParameterSet/interface/MakeParameterSets.h"
+
+#include "../interface/Ntuplizer.h"
+#include "../interface/NtupleBranches.h"
+#include "../interface/CandidateNtuplizer.h"
+#include "../interface/JetsNtuplizer.h"
+#include "../interface/ElectronsNtuplizer.h"
+#include "../interface/GenParticlesNtuplizer.h"
+#include "../interface/GenJetsNtuplizer.h"
+#include "../interface/MuonsNtuplizer.h"
+#include "../interface/TausNtuplizer.h"
+#include "../interface/TriggersNtuplizer.h"
+#include "../interface/METsNtuplizer.h"
+#include "../interface/PileUpNtuplizer.h"
+#include "../interface/VerticesNtuplizer.h"
+
+///////////////////////////////////////////////////////////////////////////////////
+Ntuplizer::Ntuplizer(const edm::ParameterSet& iConfig)
+{
+
+  edm::Service<TFileService> fs;
+  TTree* tree = fs->make<TTree>( "tree", "tree" );
+  nBranches_ = new NtupleBranches( tree );
+
+  runOnMC = iConfig.getParameter<bool>("runOnMC");
+  
+  std::string jecpath = iConfig.getParameter<std::string>("jecpath");
+  //  std::cout<< "jecpath "<< jecpath <<std::endl;
+  
+  /*=======================================================================================*/
+  std::vector<edm::InputTag> jetLabels;
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("AK5jetColl") );
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("CA8jetColl") );
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("CA8prunedjetColl") );
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl") );
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("rho") );
+  jetLabels.push_back( iConfig.getParameter<edm::InputTag>("subjetsWithFlavor") );
+
+  std::vector<std::string> jecCA8Labels;
+  std::string tmpString;
+  std::vector<std::string> tmpVec = iConfig.getParameter<std::vector<std::string> >("jecCA8PayloadNames");  
+  for( unsigned int v = 0; v < tmpVec.size(); ++v ){
+     tmpString = jecpath + tmpVec[v];
+     jecCA8Labels.push_back(tmpString);
+  }    
+  jecCA8Labels.push_back( iConfig.getParameter<std::string>("jecCA8UncName") );
+
+  std::cout<< "iConfig.getParameter<std::string>(jecCA8UncName)  "<< iConfig.getParameter<std::string>("jecCA8UncName") <<std::endl;
+  std::vector<std::string> jecAK5Labels;
+  tmpVec.clear(); tmpVec = iConfig.getParameter<std::vector<std::string> >("jecAK5chsPayloadNames");
+  for( unsigned int v = 0; v < tmpVec.size(); ++v ){
+     tmpString = jecpath + tmpVec[v];
+     jecAK5Labels.push_back(tmpString);
+  }    
+  jecAK5Labels.push_back( iConfig.getParameter<std::string>("jecAK5chsUncName") );
+  
+  nTuplizers_["jets"] = new JetsNtuplizer(  jetLabels, jecCA8Labels, jecAK5Labels, nBranches_ );
+
+  /*=======================================================================================*/  
+  std::vector<edm::InputTag> eleLabels;
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("eleColl"    ) );
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl"    ) );
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("rho"        ) );
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("bs"         ) );
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("conversions") );
+  eleLabels.push_back( iConfig.getParameter<edm::InputTag>("eleColl2"   ) );
+  nTuplizers_["electrons"] = new ElectronsNtuplizer( eleLabels , nBranches_ );  
+
+  /*=======================================================================================*/
+  std::vector<edm::InputTag> muonsLabels;
+  muonsLabels.push_back( iConfig.getParameter<edm::InputTag>("muonsColl") );
+  muonsLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl"  ) );
+  muonsLabels.push_back( iConfig.getParameter<edm::InputTag>("rho"      ) );
+  muonsLabels.push_back( iConfig.getParameter<edm::InputTag>("muonsColl2") );
+  nTuplizers_["muons"] = new MuonsNtuplizer( muonsLabels, nBranches_ );
+
+  /*=======================================================================================*/  
+  std::vector<edm::InputTag> tausLabels;
+  tausLabels.push_back( iConfig.getParameter<edm::InputTag>("tausColl") );
+  tausLabels.push_back( iConfig.getParameter<edm::InputTag>("eleTausColl") );
+  tausLabels.push_back( iConfig.getParameter<edm::InputTag>("muTausColl") );
+  tausLabels.push_back( iConfig.getParameter<edm::InputTag>("rho") );
+  tausLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl"    ) );
+  nTuplizers_["taus"] = new TausNtuplizer( tausLabels, nBranches_ );
+
+  /*=======================================================================================*/  
+  std::vector<edm::InputTag> triggersLabels;
+  triggersLabels.push_back( iConfig.getParameter<edm::InputTag>("HLT") );
+  nTuplizers_["triggers"] = new TriggersNtuplizer( triggersLabels, nBranches_ );
+
+  /*=======================================================================================*/  
+  std::vector<edm::InputTag> METsLabels;
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("METrawColl") );
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("METColl") );
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("rho") );
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl") );
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxCollForMet") ); 
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("AK5JetForMet") );
+  METsLabels.push_back( iConfig.getParameter<edm::InputTag>("muonsColl") );  
+  
+  jecAK5Labels.clear();
+  tmpVec.clear(); tmpVec = iConfig.getParameter<std::vector<std::string> >("jecAK5PayloadNames");
+  for( unsigned int v = 0; v < tmpVec.size(); ++v ){
+     tmpString = jecpath + tmpVec[v];
+     jecAK5Labels.push_back(tmpString);
+  }     
+     
+  std::vector<std::string> corrFormulas;
+  corrFormulas.push_back(iConfig.getParameter<std::string>("corrMetPx"));
+  corrFormulas.push_back(iConfig.getParameter<std::string>("corrMetPy"));
+  
+  nTuplizers_["MET"] = new METsNtuplizer( METsLabels, jecAK5Labels, corrFormulas, nBranches_ );
+
+  /*=======================================================================================*/
+  std::vector<edm::InputTag> vtxLabels;
+  vtxLabels.push_back( iConfig.getParameter<edm::InputTag>("vtxColl") );
+  nTuplizers_["vertices"] = new VerticesNtuplizer( vtxLabels, nBranches_ );
+
+  /*=======================================================================================*/    
+  if ( runOnMC ){
+     std::vector<edm::InputTag> genpLabels;
+     genpLabels.push_back( iConfig.getParameter<edm::InputTag>("genpColl") );
+     nTuplizers_["genParticles"] = new GenParticlesNtuplizer( genpLabels, nBranches_ );
+  
+     std::vector<edm::InputTag> genJetsLabels;
+     genJetsLabels.push_back( iConfig.getParameter<edm::InputTag>("ak5GenJetsColl") );
+     genJetsLabels.push_back( iConfig.getParameter<edm::InputTag>("ak5GenJetsNoNuColl") );
+     genJetsLabels.push_back( iConfig.getParameter<edm::InputTag>("ca8GenJetsColl") );
+     genJetsLabels.push_back( iConfig.getParameter<edm::InputTag>("ca8GenJetsNoNuColl") );
+     nTuplizers_["genJets"] = new GenJetsNtuplizer( genJetsLabels, nBranches_ );
+
+     std::vector<edm::InputTag> PUsLabels;
+     PUsLabels.push_back( iConfig.getParameter<edm::InputTag>("PUInfo") );
+     nTuplizers_["PU"] = new PileUpNtuplizer( PUsLabels, nBranches_ );
+  }
+  
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+Ntuplizer::~Ntuplizer()
+{
+   for( std::map<std::string,CandidateNtuplizer*>::iterator it = nTuplizers_.begin(); it != nTuplizers_.end(); ++it )
+      delete it->second;
+   nTuplizers_.clear();   
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
+{
+   nBranches_->reset();
+//    if (iEvent.id().event()>16269 ) return;
+   nBranches_->EVENT_event = iEvent.id().event();
+   nBranches_->EVENT_run   = iEvent.id().run();
+   nBranches_->EVENT_lumiBlock = iEvent.id().luminosityBlock();   
+ 
+
+   for( std::map<std::string,CandidateNtuplizer*>::iterator it = nTuplizers_.begin(); it != nTuplizers_.end(); ++it )
+      (it->second)->fillBranches( iEvent, iSetup );
+   
+   nBranches_->fillTree();
+}
+
+ 
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::beginJob()
+{
+
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::endJob() 
+{
+   
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::beginRun(edm::Run const&, edm::EventSetup const&)
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::endRun(edm::Run const&, edm::EventSetup const&)
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::beginLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&)
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::endLuminosityBlock(edm::LuminosityBlock const&, edm::EventSetup const&)
+{
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+void Ntuplizer::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+  //The following says we do not know what parameters are allowed so do no validation
+  // Please change this to state exactly what you do use, even if it is no parameters
+  edm::ParameterSetDescription desc;
+  desc.setUnknown();
+  descriptions.addDefault(desc);
+}
+
+//define this as a plug-in
+DEFINE_FWK_MODULE(Ntuplizer);

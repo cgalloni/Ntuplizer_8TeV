@@ -1,0 +1,391 @@
+#include "../interface/ElectronsNtuplizer.h"
+
+#include "EGamma/EGammaAnalysisTools/interface/EGammaCutBasedEleId.h"
+#include "EGamma/EGammaAnalysisTools/interface/ElectronEffectiveArea.h"
+
+#include <cmath>
+
+//===================================================================================================================
+ElectronsNtuplizer::ElectronsNtuplizer( std::vector<edm::InputTag> labels, NtupleBranches* nBranches )
+   : CandidateNtuplizer( nBranches )
+   , eleLabel_( labels[0] )
+   , verticesLabel_( labels[1] )
+   , rhoLabel_( labels[2] )
+   , beamspotLabel_( labels[3] )
+   , conversionsLabel_( labels[4] )
+   , eleNotBoostedLabel_( labels[5] )
+{
+
+}
+
+//===================================================================================================================
+ElectronsNtuplizer::~ElectronsNtuplizer( void )
+{
+
+}
+
+//===================================================================================================================
+void ElectronsNtuplizer::fillBranches( edm::Event const & event, const edm::EventSetup& iSetup ){
+
+ /* here we want to save the leptons info*/
+
+  event.getByLabel(eleLabel_, electrons_);
+  event.getByLabel(verticesLabel_, vertices_);
+  event.getByLabel(rhoLabel_, rho_);
+  event.getByLabel(beamspotLabel_, beamspot_);
+  event.getByLabel(conversionsLabel_, conversions_);
+  event.getByLabel(eleNotBoostedLabel_, electronsNotBoosted_);
+
+  for( size_t e = 0; e < electrons_->size(); ++e ){
+   
+    pat::Electron ele = (*electrons_)[e];
+    pat::Electron eleNotBoosted = (*electronsNotBoosted_)[e];
+
+    /*std::cout << "electron " << e << "/" << electrons_->size();
+    std::cout << ": pt = " << ele.pt() << " - eta = " << ele.eta() << " - phi = " << ele.phi() << " - e = " << ele.energy() << std::endl;
+    std::cout << "### chargedHadronIso = " << ele.userIsolation(pat::PfChargedHadronIso);
+    std::cout << "- neutralHadronIso = " << ele.userIsolation(pat::PfNeutralHadronIso);
+    std::cout << "- photonIso = " << ele.userIsolation(pat::PfGammaIso) << std::endl;*/
+    
+    nBranches_->lep_type   .push_back(ele.pdgId());
+    nBranches_->lep_charge .push_back(ele.charge());
+    nBranches_->lep_e      .push_back(ele.energy());
+    nBranches_->lep_eta    .push_back(ele.superCluster()->eta());
+    nBranches_->lep_mass   .push_back(ele.mass());
+    nBranches_->lep_pt     .push_back(ele.pt());
+
+
+   //   std::cout<< "ele.pt() " << ele.pt() << std::endl;
+//      std::cout<<"ele.superCluster()->eta()"<<ele.superCluster()->eta()<<endl;
+//      std::cout<< "ele.phi() " << ele.phi() << std::endl;
+ 
+//      std::cout<< "ele.et() " << ele.et() << std::endl;
+//      std::cout<< "ele.caloEnergy()" <<ele.caloEnergy()<<std::endl;
+ 
+
+  
+    nBranches_->lep_phi    .push_back(ele.phi());
+    nBranches_->lep_TauType.push_back(0);
+    
+    float dxy = fabs(ele.gsfTrack()->dxy(vertices_->at(0).position()));
+    nBranches_->lep_dxy.push_back(dxy);
+    float dz = fabs(ele.gsfTrack()->dz(vertices_->at(0).position()));
+    nBranches_->lep_dz.push_back(dz);
+    
+    nBranches_->lep_photonIso         .push_back(ele.photonIso());
+    nBranches_->lep_neutralHadIso     .push_back(ele.neutralHadronIso());
+    nBranches_->lep_chargedHadIso     .push_back(ele.chargedHadronIso());
+    nBranches_->lep_trackIso          .push_back(ele.trackIso());
+    nBranches_->lep_photonIsoBoost    .push_back(ele.userIsolation(pat::PfGammaIso));
+    nBranches_->lep_neutralHadIsoBoost.push_back(ele.userIsolation(pat::PfNeutralHadronIso));
+    nBranches_->lep_chargedHadIsoBoost.push_back(ele.userIsolation(pat::PfChargedHadronIso));
+
+    double Aeff04 = 0.5;
+    if ( fabs(ele.superCluster()->eta()) < 1.0 ) Aeff04 = 0.208;
+    if ( fabs(ele.superCluster()->eta()) > 1.0 && fabs(ele.superCluster()->eta()) < 1.479 ) Aeff04 = 0.209;
+    if ( fabs(ele.superCluster()->eta()) > 1.479 && fabs(ele.superCluster()->eta()) < 2.0 ) Aeff04 = 0.115;
+    if ( fabs(ele.superCluster()->eta()) > 2.0 && fabs(ele.superCluster()->eta()) < 2.2 ) Aeff04 = 0.143;
+    if ( fabs(ele.superCluster()->eta()) > 2.2 && fabs(ele.superCluster()->eta()) < 2.3 ) Aeff04 = 0.183;
+    if ( fabs(ele.superCluster()->eta()) > 2.3 && fabs(ele.superCluster()->eta()) < 2.4 ) Aeff04 = 0.194;
+    if ( fabs(ele.superCluster()->eta()) > 2.4 ) Aeff04 = 0.261;
+   
+    ///Aniello
+ 
+    double Aeff03 = 0.5;
+    if ( fabs(ele.superCluster()->eta()) < 1.0 ) Aeff03 = 0.13;
+    if ( fabs(ele.superCluster()->eta()) > 1.0 && fabs(ele.superCluster()->eta()) < 1.479 ) Aeff03 = 0.14;
+    if ( fabs(ele.superCluster()->eta()) > 1.479 && fabs(ele.superCluster()->eta()) < 2.0 ) Aeff03 = 0.07;
+    if ( fabs(ele.superCluster()->eta()) > 2.0 && fabs(ele.superCluster()->eta()) < 2.2 ) Aeff03 = 0.09;
+    if ( fabs(ele.superCluster()->eta()) > 2.2 && fabs(ele.superCluster()->eta()) < 2.3 ) Aeff03 = 0.11;
+    if ( fabs(ele.superCluster()->eta()) > 2.3 && fabs(ele.superCluster()->eta()) < 2.4 ) Aeff03 = 0.11;
+    if ( fabs(ele.superCluster()->eta()) > 2.4 ) Aeff03 = 0.14;      
+  
+   
+    ///Cesar
+
+  // float thiseta= fabs(ele.superCluster()->eta());
+//     double Aeff03 = 0.;
+//     if(thiseta>=0.0 && thiseta<1.0) Aeff03=0.130;
+//     if(thiseta>=1.0 && thiseta<1.479) Aeff03=0.137;
+//     if(thiseta>=1.479 && thiseta<2.0) Aeff03=0.067;
+//     if(thiseta>=2.0 && thiseta<2.2) Aeff03=0.089;
+//     if(thiseta>=2.2 && thiseta<2.3) Aeff03=0.107;
+//     if(thiseta>=2.3 && thiseta<2.4) Aeff03=0.110;
+//     if(thiseta>=2.4) Aeff03=0.138;
+//     float zero=0.;
+     
+    double rho = *(rho_.product()); //std::cout << "***************** rho = " << rho_ << std::endl;			  
+    //double energy = rho*ElectronEffectiveArea::GetElectronEffectiveArea(ElectronEffectiveArea::kEleGammaAndNeutralHadronIso03, ele.superCluster()->eta(), ElectronEffectiveArea::kEleEAData2012);	
+    float  DeltaCorrectedIso = (ele.chargedHadronIso() + std::max(0., ele.neutralHadronIso() + ele.photonIso() - 0.5*ele.puChargedHadronIso()))/ele.pt(); //from single top	 
+
+  //   std::cout<< "ele.chargedHadronIso() " << ele.chargedHadronIso() << std::endl;
+ //     std::cout<< "eleNotBoosted.chargedHadronIso() " << eleNotBoosted.chargedHadronIso() << std::endl;
+ //     std::cout<< "ele.neutralHadronIso() " << ele.neutralHadronIso() << std::endl;
+ //     std::cout<< "eleNotBoosted.neutralHadronIso() " << eleNotBoosted.neutralHadronIso() << std::endl;
+ //     std::cout<< "ele.puChargedHadronIso() "<< ele.puChargedHadronIso()<< std::endl;
+ //     std::cout<< "eleNotBoosted.puChargedHadronIso() "<< eleNotBoosted.puChargedHadronIso()<< std::endl;
+ //     std::cout<< "ele.photonIso() "<< ele.photonIso() << std::endl;
+ //     std::cout<< "eleNotBoosted.photonIso() "<< eleNotBoosted.photonIso() << std::endl;
+
+    float  RhoCorrectedIso04 = ele.chargedHadronIso() + std::max(ele.neutralHadronIso() + ele.photonIso() - rho*Aeff04, 0.);
+
+    float  RhoCorrectedIso03 = ele.chargedHadronIso() + std::max(ele.neutralHadronIso() + ele.photonIso() - rho*Aeff03, 0.);
+    float  RhoCorrectedIso03NotBoosted = eleNotBoosted.chargedHadronIso() + std::max(eleNotBoosted.neutralHadronIso() + eleNotBoosted.photonIso() - rho*Aeff03, 0.);
+    //float  RhoCorrectedIso (ele.chargedHadronIso() + std::max(0., ele.neutralHadronIso() + ele.photonIso() - energy))/ele.pt(); //from single top
+    nBranches_->lep_pfDeltaCorrRelIso.push_back(DeltaCorrectedIso);
+    nBranches_->lep_pfRhoCorrRelIso04.push_back(RhoCorrectedIso04);
+    nBranches_->lep_pfRhoCorrRelIso03.push_back(RhoCorrectedIso03);
+    nBranches_->lep_pfRelIso	     .push_back((ele.chargedHadronIso() + ele.neutralHadronIso()+ ele.photonIso())/ele.pt());
+   //  std::cout<<"  pat::PfChargedHadronIso " <<pat::PfChargedHadronIso << " Cesar 's (userIsolation_[4] " <<  userIsolation_[4] <<std::endl;
+
+//     std::cout<<"  pat::PfNeutralHadronIso " <<pat::PfNeutralHadronIso << " Cesar 's (userIsolation_[1] " <<  userIsolation_[1] <<std::endl;
+
+//  std::cout<<"  pat::PfGammaIso " <<pat::PfGammaIso << " Cesar 's (userIsolation_[1] " <<  userIsolation_[2] <<std::endl;
+
+
+    float  DeltaCorrectedIsoBoost = (ele.userIsolation(pat::PfChargedHadronIso) + std::max(0., ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso) - 0.5*ele.userIsolation(pat::PfPUChargedHadronIso)))/ele.pt(); //from single top	 
+    float  RhoCorrectedIso04Boost = ele.userIsolation(pat::PfChargedHadronIso) + std::max(ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso) - rho*Aeff04, 0.);
+    float  RhoCorrectedIso03Boost = ele.userIsolation(pat::PfChargedHadronIso) + std::max(ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso) - rho*Aeff03, 0.);
+    //float  RhoCorrectedIso (ele.chargedHadronIso() + std::max(0., ele.neutralHadronIso() + ele.photonIso() - energy))/ele.pt(); //from single top
+    nBranches_->lep_pfDeltaCorrRelIsoBoost   .push_back(DeltaCorrectedIsoBoost);
+    nBranches_->lep_pfRhoCorrRelIso04Boost   .push_back(RhoCorrectedIso04Boost);
+    nBranches_->lep_pfRhoCorrRelIso03Boost   .push_back(RhoCorrectedIso03Boost);
+    nBranches_->lep_pfRelIsoBoost            .push_back((ele.userIsolation(pat::PfChargedHadronIso) + ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso))/ele.pt());
+        
+    nBranches_->lep_SemileptonicPFIso        .push_back(RhoCorrectedIso03// /ele.pt()
+							);
+    nBranches_->lep_SemileptonicCorrPFIso    .push_back(RhoCorrectedIso03Boost// /ele.pt()
+							);
+    /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       Apr9: with Aniello we decide to use the collection "patElectronsWithTrigger"  ,
+       that differs from the "patElectronsWithTriggerBoosted" just for the DIL isolations.
+       I am changing those and save the new one in the ntuple. 
+       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       
+ 
+    nBranches_->lep_DilPFIso                 .push_back(RhoCorrectedIso03// /ele.pt()
+							);
+    nBranches_->lep_DilDETIso                .push_back((ele.userIso(0)+ele.userIso(1)+ ele.userIso(2))// /ele.pt()
+							);
+	 
+      */ 
+
+
+    nBranches_->lep_DilPFIso                 .push_back(RhoCorrectedIso03NotBoosted// /ele.pt()
+							);
+    nBranches_->lep_DilDETIso                .push_back((eleNotBoosted.userIso(0)+eleNotBoosted.userIso(1)+ eleNotBoosted.userIso(2))// /ele.pt()
+							);
+
+
+
+    bool   passesTriggerTight	    = true;
+    bool   passesTight  	    = true;
+    bool   passesVeto		    = true;
+    bool   passesLoose  	    = true;
+    bool   passesMedium 	    = true;	  
+    double iso_ch		    = ele.chargedHadronIso();
+    double iso_em		    = ele.photonIso();
+    double iso_nh		    = ele.neutralHadronIso();	   
+    float  trackIso		    = ele.dr03TkSumPt();
+    float  ecalIso		    = ele.dr03EcalRecHitSumEt();
+    float  hcalIso		    = ele.dr03HcalTowerSumEt();      
+    bool   isEB 		    = ele.isEB() ? true : false;
+    float  pt			    = ele.ecalDrivenMomentum().pt();
+    float  eta  		    = ele.superCluster()->eta();      
+    float  dEtaIn		    = ele.deltaEtaSuperClusterTrackAtVtx();
+    float  dPhiIn		    = ele.deltaPhiSuperClusterTrackAtVtx();
+    float  sigmaIEtaIEta	    = ele.sigmaIetaIeta();
+    float  hoe  		    = ele.hadronicOverEm();
+    float  ooemoop		    = (1.0/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy());
+    const  reco::BeamSpot &beamSpot = *(beamspot_.product());  
+    bool   vtxFitConversion	    = ConversionTools::hasMatchedConversion(ele, conversions_, beamSpot.position());
+    float  mHits		    = ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits();
+	      
+    bool id = EgammaCutBasedEleId::PassTriggerCuts(EgammaCutBasedEleId::TRIGGERTIGHT, isEB, pt, dEtaIn, dPhiIn, sigmaIEtaIEta, hoe, trackIso, ecalIso, hcalIso);
+    passesTriggerTight = passesTriggerTight && id;
+    
+    id = EgammaCutBasedEleId::PassWP(EgammaCutBasedEleId::TIGHT, isEB, pt, eta, dEtaIn, dPhiIn, sigmaIEtaIEta, hoe, ooemoop, dxy, dz, iso_ch, iso_em, iso_nh, vtxFitConversion, mHits, *rho_);
+    passesTight = passesTight && id;
+    
+    id = EgammaCutBasedEleId::PassWP(EgammaCutBasedEleId::LOOSE, isEB, pt, eta, dEtaIn, dPhiIn, sigmaIEtaIEta, hoe, ooemoop, dxy, dz, iso_ch, iso_em, iso_nh, vtxFitConversion, mHits, *rho_);
+    passesLoose = passesLoose && id;
+    
+    id = EgammaCutBasedEleId::PassWP(EgammaCutBasedEleId::VETO, isEB, pt, eta, dEtaIn, dPhiIn, sigmaIEtaIEta, hoe, ooemoop, dxy, dz, iso_ch, iso_em, iso_nh, vtxFitConversion, mHits, *rho_);
+    passesVeto = passesVeto && id;
+    
+    id = EgammaCutBasedEleId::PassWP(EgammaCutBasedEleId::MEDIUM, isEB, pt, eta, dEtaIn, dPhiIn, sigmaIEtaIEta, hoe, ooemoop, dxy, dz, iso_ch, iso_em, iso_nh, vtxFitConversion, mHits, *rho_);
+    passesMedium = passesMedium && id; 
+     
+    nBranches_->lep_idMVAtrig  .push_back(ele.electronID("mvaTrigV0"));	   
+    nBranches_->lep_looseId    .push_back((float)passesLoose);
+    nBranches_->lep_vetoId     .push_back((float)passesVeto);
+    nBranches_->lep_tightId    .push_back((float)passesTight);
+    nBranches_->lep_mediumId   .push_back((float)passesMedium);
+    nBranches_->lep_trigTightId.push_back((float)passesTriggerTight);
+
+    nBranches_->lep_normChi2	   .push_back(-99);
+    nBranches_->lep_isGlobalMuon   .push_back(-99);
+    nBranches_->lep_trackerHits	   .push_back(-99);
+    nBranches_->lep_matchedStations.push_back(-99);
+    nBranches_->lep_pixelHits	   .push_back(-99);
+    nBranches_->lep_globalHits	   .push_back(-99);
+    nBranches_->lep_isLooseMuon	   .push_back(-99);
+    nBranches_->lep_isSoftMuon	   .push_back(-99);
+    nBranches_->lep_isTightMuon	   .push_back(-99);
+    nBranches_->lep_isHighPtMuon   .push_back(-99);
+     
+    bool isHEEP = false;
+
+    //float et = ele.energy()!=0. ? ele.et()/ele.energy()*ele.caloEnergy() : 0.;
+    float et = ele.caloEnergy()*TMath::Sin(ele.p4().theta());
+    eta = ele.caloPosition().eta();
+    double iso;
+    double isoCut;
+                      
+    if( et > 35. ) {
+       if( fabs(eta) < 1.442 ){
+          iso = ele.dr03EcalRecHitSumEt() + ele.dr03HcalDepth1TowerSumEt();
+          isoCut = 2 + 0.03*et + 0.28*rho;
+          if( ele.ecalDriven() == 1 && fabs(ele.deltaEtaSuperClusterTrackAtVtx()) < 0.005 && fabs(ele.deltaPhiSuperClusterTrackAtVtx()) < 0.06 && 
+              ele.hadronicOverEm() < 0.05 && (ele.e2x5Max()/ele.e5x5() > 0.94 || ele.e1x5()/ele.e5x5() > 0.83) && 
+              iso < isoCut && ele.dr03TkSumPt() < 5. && ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits() <= 1 && 
+              fabs(dxy) < 0.02 ) isHEEP = true;
+       }
+       if( fabs(eta) > 1.56 && fabs(eta) < 2.5 ){
+          iso = ele.dr03EcalRecHitSumEt() + ele.dr03HcalDepth1TowerSumEt();
+          if( et <= 50 )
+             isoCut = 2.5 + 0.28*rho;
+          else
+             isoCut = 2.5+0.03*(et-50.) + 0.28*rho;   
+          if( ele.ecalDriven() == 1 && fabs(ele.deltaEtaSuperClusterTrackAtVtx()) < 0.007 && fabs(ele.deltaPhiSuperClusterTrackAtVtx()) < 0.06 &&
+              ele.hadronicOverEm() < 0.05 && ele.scSigmaIEtaIEta() < 0.03 && iso < isoCut && ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits() <= 1 
+              && ele.dr03TkSumPt() < 5. && fabs(dxy) < 0.05 ) isHEEP = true;    
+       }  
+    }      
+        
+    nBranches_->lep_isHEEP.push_back( isHEEP );    
+    // Aniello's selection
+
+
+    bool isASelection= false;
+
+
+    /////Aniello working version
+    
+//     if(ele.pt()>=10){
+//       if(fabs(ele.superCluster()->eta())<=1.479){
+// 	if((fabs(ele.deltaEtaSuperClusterTrackAtVtx())<0.004)
+// 	   && (fabs(ele.deltaPhiSuperClusterTrackAtVtx())<0.030)
+// 	   && (ele.sigmaIetaIeta()<0.01) 
+// 	   && (ele.hadronicOverEm()<0.12) 
+// 	   && (fabs(dxy)<0.02) 
+// 	   && (fabs(dz)<0.1) 
+// 	   &&((fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy()))<0.05)
+// 	   && (ele.passConversionVeto()!=0) 
+// 	   && (ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits()==0))    isASelection= true; 
+//       }
+      
+//       if(fabs(ele.superCluster()->eta())>1.479 && fabs(ele.superCluster()->eta())<2.5){
+// 	if((fabs(ele.deltaEtaSuperClusterTrackAtVtx())<0.005)  
+// 	   &&( fabs(ele.deltaPhiSuperClusterTrackAtVtx())<0.020)  
+// 	   &&(ele.sigmaIetaIeta()<0.03)  
+// 	   &&(ele.hadronicOverEm()<0.10)  
+// 	   &&(fabs(dxy)<0.02)  
+// 	   &&(fabs(dz)<0.1)  
+// 	   &&((fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy()))<0.05)  
+// 	   &&(ele.passConversionVeto()!=0)  
+// 	   &&(ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits()==0))   isASelection= true;
+//       }
+//     }
+
+
+    //Removing the request on the pt
+//     if(ele.pt()>=10){
+      if(fabs(ele.superCluster()->eta())<=1.479){
+	if((fabs(ele.deltaEtaSuperClusterTrackAtVtx())<0.004)
+	   && (fabs(ele.deltaPhiSuperClusterTrackAtVtx())<0.030)
+	   && (ele.sigmaIetaIeta()<0.01) 
+	   && (ele.hadronicOverEm()<0.12) 
+	   && (fabs(dxy)<0.02) 
+	   && (fabs(dz)<0.1) 
+	   &&((fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy()))<0.05)
+	   && (ele.passConversionVeto()!=0) 
+	   && (ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits()==0))    isASelection= true; 
+      }
+      
+      if(fabs(ele.superCluster()->eta())>1.479 && fabs(ele.superCluster()->eta())<2.5){
+	if((fabs(ele.deltaEtaSuperClusterTrackAtVtx())<0.005)  
+	   &&( fabs(ele.deltaPhiSuperClusterTrackAtVtx())<0.020)  
+	   &&(ele.sigmaIetaIeta()<0.03)  
+	   &&(ele.hadronicOverEm()<0.10)  
+	   &&(fabs(dxy)<0.02)  
+	   &&(fabs(dz)<0.1)  
+	   &&((fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy()))<0.05)  
+	   &&(ele.passConversionVeto()!=0)  
+	   &&(ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits()==0))   isASelection= true;
+      }
+//     }
+
+
+
+
+     //   std::cout <<"**************Electron************** "<<isASelection<<std::endl;
+//        std::cout <<"isASelection "<<isASelection<<std::endl;
+//        std::cout <<" ele -- fabs(ele.superCluster()->eta()) " <<fabs(ele.superCluster()->eta()) <<    " fabs(ele.deltaEtaSuperClusterTrackAtVtx()) "<< fabs(ele.deltaEtaSuperClusterTrackAtVtx()) << std::endl;
+//        std::cout <<  " --fabs(  ele.deltaPhiSuperClusterTrackAtVtx() "<<fabs( ele.deltaPhiSuperClusterTrackAtVtx())<<  std::endl;
+//      std::cout <<  " -- ele.sigmaIetaIeta() "<<ele.sigmaIetaIeta()<< std::endl;
+//       std::cout <<  " -- ele.hadronicOverEm() "<<ele.hadronicOverEm()<< std::endl;
+//       std::cout <<  " --  fabs(dxy) "<<fabs(dxy)<< std::endl;
+//        std::cout << " --  fabs(dz) "<<fabs(dz)<< std::endl;
+//        std::cout << "  --(fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy())) "<<(fabs(1/ele.ecalEnergy() - ele.eSuperClusterOverP()/ele.ecalEnergy()))<<std::endl;
+//       std::cout <<    " ele.passConversionVeto() "<<ele.passConversionVeto()<<  std::endl;
+//   std::cout <<    " -- ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits() "<<ele.gsfTrack()->trackerExpectedHitsInner().numberOfHits()<<     std::endl;
+
+
+   nBranches_->lep_isASelection.push_back( isASelection);
+  //  bool isADilSelection= false;
+//    isADilSelection = isASelection // && (RhoCorrectedIso03Boost< 0.1)
+// 				      ;
+//    nBranches_->lep_isADilSelection.push_back(isADilSelection );
+
+   // Cesar's selection
+
+   bool isCSelection=false;
+   bool isCSel=false;
+
+
+   if( (ele.pt()<20.0) && (fabs(ele.superCluster()->eta())>1.479 && fabs(ele.superCluster()->eta())<2.5) )	{
+     if(RhoCorrectedIso03Boost/ele.pt() <0.07) isCSel=true;
+   }else{
+     if(RhoCorrectedIso03Boost/ele.pt() <0.10) isCSel=true;
+   }      
+  
+   isCSelection =  isASelection && isCSel;
+   nBranches_->lep_isCSelection.push_back(isCSelection );
+
+
+//    std::cout << "isCSelection "<<isCSelection<<std::endl;
+
+//       std::cout << " ********************* Ele **************************" <<std::endl;
+//       std::cout << " pat::PfGammaIso "<<pat::PfGammaIso<<" pat::PfNeutralHadronIso "<< pat::PfNeutralHadronIso<<" pat::PfChargedHadronIso "<< pat::PfChargedHadronIso <<" pat::User1Iso "<<pat::User1Iso<<" pat::User2Iso " <<pat::User2Iso<< pat::PfPUChargedHadronIso <<pat::PfPUChargedHadronIso<< std::endl;
+
+//       std::cout << " lep_pfRhoCorrRelIso03 "<< (ele.chargedHadronIso() + std::max(0., ele.neutralHadronIso() + ele.photonIso() - TMath::Pi()*0.3*0.3*rho))/ele.pt() <<std::endl;
+//       std::cout << " lep_pfRhoCorrRelIso03Boost "<<(ele.userIsolation(pat::PfChargedHadronIso) + std::max(0., ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso) - TMath::Pi()*0.3*0.3*rho))/ele.pt()<< std::endl;
+//   std::cout << " lep_pfRhoCorrRelIso04 "<< (ele.chargedHadronIso() + std::max(0., ele.neutralHadronIso() + ele.photonIso() - TMath::Pi()*0.4*0.4*rho))/ele.pt() <<std::endl;
+//   std::cout << " lep_pfRhoCorrRelIso04Boost "<<(ele.userIsolation(pat::PfChargedHadronIso) + std::max(0., ele.userIsolation(pat::PfNeutralHadronIso) + ele.userIsolation(pat::PfGammaIso) - TMath::Pi()*0.4*0.4*rho))/ele.pt()<< std::endl;
+
+//       std::cout << " ele.chargedHadronIso() " << ele.chargedHadronIso() <<" ele.userIsolation(pat::PfChargedHadronIso) " <<ele.userIsolation(pat::PfChargedHadronIso)<<std::endl;
+//       std::cout << " ele.neutralHadronIso() " <<  ele.neutralHadronIso()<<" ele.userIsolation(pat::PfNeutralHadronIso) "<<  ele.userIsolation(pat::PfNeutralHadronIso)<<std::endl;
+//       std::cout << " ele.photonIso() "<<   ele.photonIso()<<" ele.userIsolation(pat::PfGammaIso) " <<ele.userIsolation(pat::PfGammaIso)<<std::endl;
+//       std::cout << " ele.userIsolation( pat::User1Iso) "<<  ele.userIsolation( pat::User1Iso)<<" ele.userIsolation(pat::User2Iso) "<<ele.userIsolation(pat::User2Iso) <<std::endl;
+
+//  std::cout << " ********************* Ele End **************************" <<std::endl;
+
+   nBranches_->lep_isAGlobal   .push_back(-99);
+   nBranches_->lep_isATracker  .push_back(-99);
+   nBranches_->lep_cktTrack_pt.push_back (-99);
+
+  }
+   nBranches_->nlep +=  electrons_->size();
+
+}

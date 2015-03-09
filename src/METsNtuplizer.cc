@@ -1,0 +1,234 @@
+#include "../interface/METsNtuplizer.h"
+
+#include <TFormula.h>
+
+//===================================================================================================================        
+METsNtuplizer::METsNtuplizer( std::vector<edm::InputTag> labels, std::vector<std::string> jecLabels, std::vector<std::string> corrFormulas, NtupleBranches* nBranches )
+   : CandidateNtuplizer( nBranches ) 
+   , METsRawLabel_( labels[0] )
+   , METsLabel_( labels[1] )
+   , rhoLabel_( labels[2] )
+   , verticesLabel_( labels[3] )
+   , verticesForMEtCorrLabel_( labels[4] )
+   , jetsLabel_( labels[5] )
+   , muonsLabel_( labels[6])
+   , jetCorrLabel_( jecLabels )
+   , corrFormulas_( corrFormulas )
+{
+   offsetCorrLabel_.push_back(jetCorrLabel_[0]);
+   initJetCorrFactors();
+   
+   std::string moduleLabel_ = "ntuplizer";
+   
+   TString corrPxFormula = corrFormulas_[0];
+   TString corrPyFormula = corrFormulas_[1];
+
+   corrPxFormula.ReplaceAll("sumEt", "x");
+   corrPxFormula.ReplaceAll("Nvtx", "y");  
+   std::string corrPxName = std::string(moduleLabel_).append("_corrPx");
+   corrPx_ = new TFormula(corrPxName.data(), corrPxFormula.Data());
+   
+   corrPyFormula.ReplaceAll("sumEt", "x");
+   corrPyFormula.ReplaceAll("Nvtx", "y");
+   std::string corrPyName = std::string(moduleLabel_).append("_corrPy");         
+   corrPy_ = new TFormula(corrPyName.data(), corrPyFormula.Data());   
+}
+
+//===================================================================================================================
+METsNtuplizer::~METsNtuplizer( void )
+{
+   SysShiftCorrMap_.clear();
+   TypeICorrMap_.clear();
+   
+   delete corrPx_;
+   delete corrPy_;
+}
+
+//===================================================================================================================
+void METsNtuplizer::initJetCorrFactors( void ){
+
+   std::vector<JetCorrectorParameters> vPar;
+   for ( std::vector<std::string>::const_iterator payloadBegin = jetCorrLabel_.begin(), payloadEnd = jetCorrLabel_.end(), ipayload = payloadBegin; ipayload != payloadEnd; ++ipayload ) {
+      JetCorrectorParameters pars(*ipayload);
+      vPar.push_back(pars);
+   }
+   
+   jecAK5_ = boost::shared_ptr<FactorizedJetCorrector> ( new FactorizedJetCorrector(vPar) );
+   
+   vPar.clear();
+   for ( std::vector<std::string>::const_iterator payloadBegin = offsetCorrLabel_.begin(), payloadEnd = offsetCorrLabel_.end(), ipayload = payloadBegin; ipayload != payloadEnd; ++ipayload ) {
+      JetCorrectorParameters pars(*ipayload);
+      vPar.push_back(pars);
+   }
+   
+   jecOffset_ = boost::shared_ptr<FactorizedJetCorrector> ( new FactorizedJetCorrector(vPar) );   
+   
+}
+
+//===================================================================================================================
+double METsNtuplizer::getJEC( reco::Candidate::LorentzVector& rawJetP4, const pat::Jet& jet, double& jetCorrEtaMax, std::vector<std::string> jecPayloadNames_ ){
+   
+   double jetCorrFactor = 1.;
+   if ( fabs(rawJetP4.eta()) < jetCorrEtaMax ){     
+      jecAK5_->setJetEta( rawJetP4.eta()	);
+      jecAK5_->setJetPt ( rawJetP4.pt()	);
+      jecAK5_->setJetE  ( rawJetP4.energy() );
+      jecAK5_->setJetPhi( rawJetP4.phi()    );
+      jecAK5_->setJetA  ( jet.jetArea()	);
+      jecAK5_->setRho   ( *(rho_.product()) );
+      jecAK5_->setNPV   ( vertices_->size() );
+      jetCorrFactor = jecAK5_->getCorrection();	  
+   }
+
+   reco::Candidate::LorentzVector corrJetP4 = rawJetP4;
+   corrJetP4 *= jetCorrFactor;
+   
+   return jetCorrFactor;
+ 
+}
+
+//===================================================================================================================
+double METsNtuplizer::getJECOffset( reco::Candidate::LorentzVector& rawJetP4, const pat::Jet& jet, double& jetCorrEtaMax, std::vector<std::string> jecPayloadNames_ ){
+   
+   double jetCorrFactor = 1.;
+   if ( fabs(rawJetP4.eta()) < jetCorrEtaMax ){     
+      jecOffset_->setJetEta( rawJetP4.eta()	);
+      jecOffset_->setJetPt ( rawJetP4.pt()	);
+      jecOffset_->setJetE  ( rawJetP4.energy() );
+      jecOffset_->setJetPhi( rawJetP4.phi()    );
+      jecOffset_->setJetA  ( jet.jetArea()	);
+      jecOffset_->setRho   ( *(rho_.product()) );
+      jecOffset_->setNPV   ( vertices_->size() );
+      jetCorrFactor = jecOffset_->getCorrection();	  
+   }
+
+   reco::Candidate::LorentzVector corrJetP4 = rawJetP4;
+   corrJetP4 *= jetCorrFactor;
+   
+   return jetCorrFactor;
+ 
+}
+
+//===================================================================================================================
+void METsNtuplizer::addSysShiftCorr( edm::Event const & event ){
+
+   SysShiftCorrMap_.clear();
+   
+   event.getByLabel(verticesForMEtCorrLabel_, verticesForMEtCorr_);
+   size_t Nvtx = verticesForMEtCorr_->size();
+      
+   double sumEt = 1.;
+
+   double corrEx = -corrPx_->Eval(sumEt, Nvtx);
+   double corrEy = -corrPy_->Eval(sumEt, Nvtx);
+
+   SysShiftCorrMap_["corrEx"] = corrEx;
+   SysShiftCorrMap_["corrEy"] = corrEy;
+      
+}
+
+//===================================================================================================================
+void METsNtuplizer::addTypeICorr( edm::Event const & event ){
+
+   TypeICorrMap_.clear();
+      
+   event.getByLabel(jetsLabel_    , jets_    );
+   event.getByLabel(rhoLabel_     , rho_     );
+   event.getByLabel(verticesLabel_, vertices_);   
+   event.getByLabel(muonsLabel_   , muons_   );
+        
+   bool skipEM_ = true; 
+   double skipEMfractionThreshold_ = 0.9;
+   bool skipMuons_ = true;
+  
+   double jetCorrEtaMax_ = 9.9;
+   double type1JetPtThreshold_ = 10.0;
+   
+   double corrEx    = 0;
+   double corrEy    = 0;
+   double corrSumEt = 0;
+   
+   int numJets = jets_->size();
+   for ( int jetIndex = 0; jetIndex < numJets; ++jetIndex ) {
+     
+     const pat::Jet& jet = jets_->at(jetIndex);
+          
+     double emEnergyFraction = jet.chargedEmEnergyFraction() + jet.neutralEmEnergyFraction();
+     if ( skipEM_ && emEnergyFraction > skipEMfractionThreshold_ ) continue;
+     
+     reco::Candidate::LorentzVector rawJetP4 = jet.correctedP4(0); 
+     double corr = getJEC(rawJetP4, jet, jetCorrEtaMax_, jetCorrLabel_);    
+         
+     if ( skipMuons_ && jet.muonMultiplicity() != 0 ) {
+        int nMuons=0;
+        for( unsigned int muonIndex = 0; muonIndex < muons_->size(); ++muonIndex ){
+	   const pat::Muon& muon = muons_->at(muonIndex);
+	   if( !muon.isGlobalMuon() && !muon.isStandAloneMuon() ) continue; 
+	   TLorentzVector muonV; muonV.SetPtEtaPhiE(muon.p4().pt(),muon.p4().eta(),muon.p4().phi(),muon.p4().e());
+	   TLorentzVector jetV; jetV.SetPtEtaPhiE(jet.p4().pt(),jet.p4().eta(),jet.p4().phi(),jet.p4().e());
+	   if( muonV.DeltaR(jetV) < 0.5 ){
+	       nMuons++;
+	       reco::Candidate::LorentzVector muonP4 = muon.p4();
+	       rawJetP4 -= muonP4;
+	   }
+	}
+     }
+     
+     reco::Candidate::LorentzVector corrJetP4 = corr*rawJetP4;     
+ 
+     if ( corrJetP4.pt() > type1JetPtThreshold_ ) {
+       
+       reco::Candidate::LorentzVector tmpP4 = jet.correctedP4(0);
+       corr = getJECOffset(tmpP4, jet, jetCorrEtaMax_, offsetCorrLabel_);
+       reco::Candidate::LorentzVector rawJetP4offsetCorr = corr*rawJetP4;
+        
+       corrEx    -= (corrJetP4.px() - rawJetP4offsetCorr.px());
+       corrEy    -= (corrJetP4.py() - rawJetP4offsetCorr.py());
+       corrSumEt += (corrJetP4.Et() - rawJetP4offsetCorr.Et());
+       
+     }
+   }
+      
+   TypeICorrMap_["corrEx"]    = corrEx;
+   TypeICorrMap_["corrEy"]    = corrEy;
+   TypeICorrMap_["corrSumEt"] = corrSumEt;
+     
+}
+
+//===================================================================================================================
+void METsNtuplizer::fillBranches( edm::Event const & event, const edm::EventSetup& iSetup ){
+
+    event.getByLabel(METsRawLabel_, METsRaw_);  
+    event.getByLabel(METsLabel_   , METs_   ); 
+
+    addTypeICorr(event);    
+    addSysShiftCorr(event);
+	      
+    std::vector<double> px   ;
+    std::vector<double> py   ;
+    std::vector<double> sumet;	      
+    for( unsigned int m = 0; m < METsRaw_->size(); ++m){   	   
+      nBranches_->METraw_et .push_back((*METsRaw_)[m].et() );	    
+      nBranches_->METraw_phi.push_back((*METsRaw_)[m].phi());
+      px.push_back((*METsRaw_)[m].px());
+      py.push_back((*METsRaw_)[m].py());
+      sumet.push_back((*METsRaw_)[m].sumEt()); 
+    }
+    
+    for( unsigned int m = 0; m < METs_->size(); ++m){
+      double pxcorr = px[m]+TypeICorrMap_["corrEx"]+SysShiftCorrMap_["corrEx"];   
+      double pycorr = py[m]+TypeICorrMap_["corrEy"]+SysShiftCorrMap_["corrEy"]; 
+      //double sumetcorr = sumet[m]+TypeICorrMap_["corrSumEt"];
+      double et = TMath::Sqrt(pxcorr*pxcorr + pycorr*pycorr);
+      TLorentzVector met; met.SetPxPyPzE(pxcorr,pycorr,0.,et);  
+      nBranches_->MET_et .push_back(et);    
+      nBranches_->MET_phi.push_back(met.Phi());
+    }     
+    nBranches_->METraw_cov[0][0] = (METsRaw_->front() ).getSignificanceMatrix()(0,0);
+    nBranches_->METraw_cov[1][0] = (METsRaw_->front() ).getSignificanceMatrix()(1,0);
+    nBranches_->METraw_cov[0][1] = (METsRaw_->front() ).getSignificanceMatrix()(0,1);
+    nBranches_->METraw_cov[1][1] = (METsRaw_->front() ).getSignificanceMatrix()(1,1);	
+
+   
+}
+
